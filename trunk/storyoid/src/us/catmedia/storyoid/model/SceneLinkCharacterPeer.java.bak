@@ -1,0 +1,231 @@
+/*
+StorYBook: Summary-based tool for novelist and script writers.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.swing.JList;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.view.dialog.add.SceneDialog;
+
+public class SceneLinkCharacterPeer {
+
+	static Logger logger = Logger.getLogger(SceneLinkCharacterPeer.class);
+
+	/**
+	 * Has to be package private!
+	 * 
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		// drop if exists
+		logger.debug("createTable: drop table " + SceneLinkCharacter.TABLE_NAME);
+		sql = "drop table " + SceneLinkCharacter.TABLE_NAME + " if exists";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+
+		// create
+		logger.debug("createTable: create table " + SceneLinkCharacter.TABLE_NAME);
+		sql = "create table "
+			+ SceneLinkCharacter.TABLE_NAME
+			+ " (" + SceneLinkCharacter.COLUMN_ID + " identity primary key,"
+			+ SceneLinkCharacter.COLUMN_SCENE_ID + " int,"
+			+ SceneLinkCharacter.COLUMN_PERSON_ID + " int)";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+
+	public static List<SceneLinkCharacter> doSelectAll() {
+		try {
+			List<SceneLinkCharacter> list = new ArrayList<SceneLinkCharacter>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select * from " + SceneLinkCharacter.TABLE_NAME);
+			sql.append(" order by " + SceneLinkCharacter.COLUMN_ID);
+
+			Statement stmt = PersistenceManager.getInstance()
+				.getConnection().createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				SceneLinkCharacter link = makeLink(rs);
+				logger.debug("doSelectAll: " + link);
+				list.add(link);
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	public static SceneLinkCharacter doSelectById(int id) throws Exception {
+		String sql = "select * from " + SceneLinkCharacter.TABLE_NAME
+			+ " where " + SceneLinkCharacter.COLUMN_ID + " = ?";
+		PreparedStatement stmt = PersistenceManager.getInstance()
+			.getConnection().prepareStatement(sql);
+		stmt.setInt(1, id);
+		ResultSet rs = stmt.executeQuery();
+		SceneLinkCharacter link = null;
+		int c = 0;
+		while (rs.next() && c < 2) {
+			link = makeLink(rs);
+			++c;
+		}
+		if (c == 0) {
+			return null;
+		}
+		if (c > 1) {
+			throw new Exception("more than one record found");
+		}
+		logger.debug("doSelectById: " + link);
+		return link;
+	}
+	
+	public static List<SceneLinkCharacter> doSelectBySceneId(int sceneId) {
+		try{
+			List<SceneLinkCharacter> list = new ArrayList<SceneLinkCharacter>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select * from " + SceneLinkCharacter.TABLE_NAME);
+			sql.append(" where " + SceneLinkCharacter.COLUMN_SCENE_ID + " = ?");
+			sql.append(" order by " + SceneLinkCharacter.COLUMN_PERSON_ID);		
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql.toString());
+			stmt.setInt(1, sceneId);
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				list.add(makeLink(rs));
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<SceneLinkCharacter>();
+	}
+
+	public static List<SceneLinkCharacter> doSelectByPerson(Character person){
+		return doSelectByPersonId(person.getId());
+	}
+	
+	public static List<SceneLinkCharacter> doSelectByPersonId(int personId) {
+		try{
+			List<SceneLinkCharacter> list = new ArrayList<SceneLinkCharacter>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select * from " + SceneLinkCharacter.TABLE_NAME);
+			sql.append(" where " + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+			PreparedStatement stmt = PersistenceManager.getInstance()
+					.getConnection().prepareStatement(sql.toString());
+			stmt.setInt(1, personId);
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				list.add(makeLink(rs));
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<SceneLinkCharacter>();
+	}
+	
+	public static List<SceneLinkCharacter> doSelect(int sceneId, int characterId)
+			throws Exception {
+		List<SceneLinkCharacter> list = new ArrayList<SceneLinkCharacter>();
+		StringBuffer sql = new StringBuffer();
+		sql.append("select * from " + SceneLinkCharacter.TABLE_NAME);
+		sql.append(" where " + SceneLinkCharacter.COLUMN_SCENE_ID + " = ?");
+		sql.append(" and " + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+		PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+				.prepareStatement(sql.toString());
+		stmt.setInt(1, sceneId);
+		stmt.setInt(2, characterId);
+		ResultSet rs = stmt.executeQuery();
+		while (rs.next()) {
+			list.add(makeLink(rs));
+		}
+		return list;
+	}
+
+	public static void doDelete(SceneLinkCharacter link) throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("delete from " + SceneLinkCharacter.TABLE_NAME);
+		sql.append(" where " + SceneLinkCharacter.COLUMN_ID + " = ?");
+		PreparedStatement stmt = PersistenceManager.getInstance()
+			.getConnection().prepareStatement(sql.toString());
+		stmt.setInt(1, link.getId());
+		stmt.execute();
+	}
+	
+	public static void doDeleteBySceneId(int sceneId) throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("delete from " + SceneLinkCharacter.TABLE_NAME);
+		sql.append(" where " + SceneLinkCharacter.COLUMN_SCENE_ID + " = ?");
+		PreparedStatement stmt = PersistenceManager.getInstance()
+			.getConnection().prepareStatement(sql.toString());
+		stmt.setInt(1, sceneId);
+		stmt.execute();
+	}
+
+	public static void doDeleteByPersonId(int personId) throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("delete from " + SceneLinkCharacter.TABLE_NAME);
+		sql.append(" where " + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+		PreparedStatement stmt = PersistenceManager.getInstance()
+			.getConnection().prepareStatement(sql.toString());
+		stmt.setInt(1, personId);
+		stmt.execute();
+	}
+
+	public static SceneLinkCharacter makeLink(ResultSet rs) throws SQLException {
+		SceneLinkCharacter link = new SceneLinkCharacter(rs.getInt(SceneLinkCharacter.COLUMN_ID));
+		link.setSceneId(rs.getInt(SceneLinkCharacter.COLUMN_SCENE_ID));
+		link.setCharacterId(rs.getInt(SceneLinkCharacter.COLUMN_PERSON_ID));
+		return link;
+	}
+	
+	public static void makeLinks(SceneDialog dlg){
+		try {
+			int sceneId = dlg.getScene().getId();
+
+			// remove all links
+			doDeleteBySceneId(sceneId);
+
+			// insert the new ones
+			JList list = dlg.getPersonList();
+			Object[] selValues = list.getSelectedValues();
+			for(int i=0;i<selValues.length;++i){
+				Character p = (Character)selValues[i];
+				SceneLinkCharacter link = new SceneLinkCharacter();
+				link.setSceneId(sceneId);
+				link.setCharacterId(p.getId());
+				link.save();
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+}

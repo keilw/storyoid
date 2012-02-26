@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+           android:layout_width="fill_parent"
+           android:layout_height="fill_parent"
+>
+<TextView id="@+id/objLbl1"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:text="Label 1"
+/>
+<EditText id="@+id/objTxt1"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_alignTop="@id/objLbl1"
+          android:layout_toRight="@id/objBtn1"
+          android:text="Edit 1"
+          android:singleLine="True"
+/>
+<EditText id="@+id/objTxt2"
+          android:layout_width="200sp"
+          android:layout_height="48sp"
+          android:layout_alignTop="@id/objLbl1"
+          android:layout_toRight="@id/objBtn1"
+          android:text="Edit 2"
+/>
+<TextView id="@+id/objLbl2"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objTxt1"
+          android:text="Label 2"
+/>
+<Button id="@+id/objBtn1"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objLbl1"
+          android:text="Btn 1"
+/>
+</RelativeLayout>
+

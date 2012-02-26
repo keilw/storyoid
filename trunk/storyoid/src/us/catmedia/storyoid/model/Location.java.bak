@@ -1,0 +1,208 @@
+/*
+StorYBook: Summary-based tool for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.util.I18N;
+import ch.intertec.storybook.util.SwingTools;
+
+
+public class Location extends Table {
+	
+	private static Logger logger = Logger.getLogger(Location.class);
+	
+	public static final String TABLE_NAME = "location";
+	
+	public static final String COLUMN_ID = "id";
+	public static final String COLUMN_NAME = "name";
+	public static final String COLUMN_CITY = "city";
+	public static final String COLUMN_COUNTRY = "country";
+	public static final String COLUMN_DESCRIPTION = "description";
+	public static final String COLUMN_ADDRESS = "address";
+		
+	private String name;
+	private String city;
+	private String country;
+	private String description;
+	private String address;
+	
+	public Location() {
+		super(TABLE_NAME);
+		isNew = true;
+	}
+
+	/**
+	 * This method must be packaged private! It is used
+	 * by {@link StrandPeer} only.
+	 * 
+	 * @param id
+	 *            the id
+	 */
+	Location(int id) {
+		super(TABLE_NAME);
+		this.id = id;
+		isNew = false;
+	}
+
+	@Override
+	public boolean save() throws Exception {
+		try {
+			String sql;
+			if (isNew) {
+				// insert
+				sql = "insert into "
+					+ TABLE_NAME
+					+ "(" + COLUMN_NAME
+					+ ", " + COLUMN_CITY
+					+ ", " + COLUMN_COUNTRY
+					+ ", " + COLUMN_DESCRIPTION
+					+ ", " + COLUMN_ADDRESS
+					+ ") values(?, ?, ?, ?, ?)";
+			} else {
+				// update
+				sql = "update " + TABLE_NAME
+					+ " set "
+					+ COLUMN_NAME + " = ?, "					
+					+ COLUMN_CITY + " = ?, "
+					+ COLUMN_COUNTRY + " = ?, "
+					+ COLUMN_DESCRIPTION + " = ?, "
+					+ COLUMN_ADDRESS + " = ? "
+					+ "where " + COLUMN_ID + " = ?";
+			}
+			PreparedStatement stmt = PersistenceManager.getInstance()
+					.getConnection().prepareStatement(sql);
+			// sets for insert & update
+			stmt.setString(1, getName());
+			stmt.setString(2, getCity());
+			stmt.setString(3, getCountry());
+			stmt.setString(4, getDescription());
+			stmt.setString(5, getAddress());
+			if (!isNew) {
+				// sets for update only
+				stmt.setInt(6, getId());
+			}
+			if (stmt.executeUpdate() != 1) {
+				throw new SQLException(isNew ? "insert" : "update" + " failed");
+			}
+			if (isNew) {
+				ResultSet rs = stmt.getGeneratedKeys();
+				int count = 0;
+				while (rs.next()) {
+					if (count > 0) {
+						throw new SQLException("error: got more than one id");
+					}
+					this.id = rs.getInt(1);
+					logger.debug("save (insert): " + this);
+					++count;
+				}
+				isNew = false;
+			} else {
+				logger.debug("save (update): " + this);
+			}
+			return true;
+		} catch (SQLException e) {
+			throw e;
+		}
+	}
+	
+	@Override
+	public String getLabelText(){
+		return toString();
+	}
+	
+	public String getName() {
+		return name == null ? "" : name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getDescription() {
+		return description == null ? "" : description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
+
+	public String getCity() {
+		return city == null ? "" : city;
+	}
+
+	public void setCity(String city) {
+		this.city = city;
+	}
+
+	public String getCountry() {
+		return country == null ? "" : country;
+	}
+
+	public void setCountry(String country) {
+		this.country = country;
+	}
+	
+	public String getAddress() {
+		return address == null ? "": address;
+	}
+
+	public void setAddress(String address) {
+		this.address = address;
+	}
+
+	@Override
+	public String toString() {
+		if(getCity().isEmpty()){
+			return getName();
+		}
+		return getName() + ", " + getCity();
+	}
+
+	public String getInfo(){
+		return getInfo(true);
+	}
+
+	public String getInfo(boolean shorten){
+		StringBuffer buf = new StringBuffer();
+		buf.append("<html><b>" + this + "</b>");
+		buf.append("<table cellpadding='0'>");
+		buf.append("<tr><td>" + I18N.getMsgColon("msg.dlg.location.address")
+				+ "</td><td width='10'>&nbsp;</td>");
+		buf.append("<td>" + getAddress() + "</td></tr>");		
+		buf.append("<tr><td>" + I18N.getMsgColon("msg.dlg.location.country")
+				+ "</td><td width='10'>&nbsp;</td>");
+		buf.append("<td>" + getCountry() + "</td></tr>");
+		buf.append("</table>");
+		String descr = getDescription()
+				.replaceAll("(\r\n|\r|\n|\n\r)", "<br>");
+		buf.append("<div style='padding-top: 4px'>");
+		if (shorten) {
+			buf.append(SwingTools.shortenString(descr, 50));
+		} else {
+			buf.append(descr);
+		}
+		buf.append("</div>");
+		return buf.toString();
+	}
+}

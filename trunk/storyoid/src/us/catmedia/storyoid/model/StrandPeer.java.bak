@@ -1,0 +1,246 @@
+/*
+StorYBook: Summary-based software for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.view.dialog.add.StrandDialog;
+
+public class StrandPeer {
+
+	private static Logger logger = Logger.getLogger(StrandPeer.class);
+
+	/**
+	 * Has to be package private!
+	 * 
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		// drop if exists
+		logger.debug("createTable: drop table " + Strand.TABLE_NAME);
+		sql = "drop table " + Strand.TABLE_NAME + " if exists";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+
+		// create
+		logger.debug("createTable: create table " + Strand.TABLE_NAME);
+		sql = "create table "
+			+ Strand.TABLE_NAME
+			+ " (" + Strand.COLUMN_ID + " identity primary key,"
+			+ Strand.COLUMN_ABBREVIATION + " varchar(16),"
+			+ Strand.COLUMN_NAME + " varchar(255),"
+			+ Strand.COLUMN_COLOR + " int)";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+
+	public static List<Strand> doSelectAll() {
+		try {
+			List<Strand> list = new ArrayList<Strand>();
+			StringBuffer sql = new StringBuffer("select * from " + Strand.TABLE_NAME);
+			sql.append(" order by " + Strand.COLUMN_ID);
+
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Strand strand = makeStrand(rs);
+				// logger.debug("doSelectAll: " + strand);
+				list.add(strand);
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public static Strand doSelectById(int id) {
+		try{
+			String sql = "select * from " + Strand.TABLE_NAME + " where "
+					+ Strand.COLUMN_ID + " = ?";
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql);
+			stmt.setInt(1, id);
+			ResultSet rs = stmt.executeQuery();
+			Strand strand = null;
+			int c = 0;
+			while (rs.next() && c < 2) {
+				strand = makeStrand(rs);
+				++c;
+			}
+			if (c == 0) {
+				return null;
+			}
+			if (c > 1) {
+				throw new Exception("more than one record found");
+			}
+			logger.debug("doSelectById: " + strand);
+			return strand;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	private static Strand makeStrand(ResultSet rs) throws SQLException {
+		Strand strand = new Strand(rs.getInt(Strand.COLUMN_ID));
+		strand.setAbbreviation(rs.getString(Strand.COLUMN_ABBREVIATION));
+		strand.setName(rs.getString(Strand.COLUMN_NAME));
+		strand.setColor(rs.getInt(Strand.COLUMN_COLOR));
+		return strand;
+	}
+	
+	public static int doCount() {
+		try{
+			String sql = "select count(" + Strand.COLUMN_ID + ") from "
+					+ Strand.TABLE_NAME;
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);
+			int c = 0;
+			int count = 0;
+			while (rs.next() && c < 2) {
+				count = rs.getInt(1);
+				++c;
+			}
+			if (c == 0) {
+				return -1;
+			}
+			if (c > 1) {
+				logger.error("more than one record found");
+				throw new Exception("more than one record found");
+			}
+			return count;
+		} catch (Exception e){
+			e.printStackTrace();
+		}
+		return 0;
+	}
+
+	/**
+	 * Cascaded deletion of the given strand.
+	 * 
+	 * @param strand the strand to delete
+	 * @return false if strand is null, true otherwise
+	 * @throws Exception
+	 */
+	public static boolean doDelete(Strand strand) throws Exception {
+		if (strand == null) {
+			return false;
+		}
+		logger.debug("doDelete: " + strand);
+
+		// delete scenes
+		for (Scene ch : ScenePeer.doSelectByStrandId(strand.getId())) {
+			ScenePeer.doDelete(ch);
+		}
+				
+		// delete the strand itself
+		String sql = "delete from " + Strand.TABLE_NAME
+			+ " where " + Strand.COLUMN_ID + " = " + strand.getId();
+		Statement stmt = PersistenceManager.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+		return true;
+	}
+	
+	public static void makeOrUpdateStrand(StrandDialog dlg, boolean edit)
+			throws Exception {
+		Strand strand;
+		if (edit) {
+			strand = dlg.getStrand();
+		} else {
+			strand = new Strand();
+		}
+		strand.setAbbreviation(dlg.getAbbreviationTF().getText());
+		strand.setName(dlg.getNameTF().getText());
+		strand.setColor(dlg.getShowColorLb().getBackground());
+		strand.save();
+	}
+		
+	public static List<Strand> doSelectByPersonAndDate(Character person, Date date){
+		try{
+			List<Strand> list = new ArrayList<Strand>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select distinct s.*");
+			sql.append(" from " + Scene.TABLE_NAME + " c,");
+			sql.append(" " + SceneLinkCharacter.TABLE_NAME + " cp,");
+			sql.append(" " + Character.TABLE_NAME + " p,");
+			sql.append(" " + Strand.TABLE_NAME + " s");
+			sql.append(" where cp." + SceneLinkCharacter.COLUMN_SCENE_ID + " = c." + Scene.COLUMN_ID);
+			sql.append(" and cp." + SceneLinkCharacter.COLUMN_PERSON_ID + " = p." + Character.COLUMN_ID);
+			sql.append(" and c." + Scene.COLUMN_STRAND_ID + " = s." + Strand.COLUMN_ID);
+			sql.append(" and p." + Character.COLUMN_ID + " = ?");
+			sql.append(" and c." + Scene.COLUMN_DATE + " = ?");
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+				.prepareStatement(sql.toString());
+			stmt.setInt(1, person.getId());
+			stmt.setDate(2, date);
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				Strand ch = makeStrand(rs);
+				list.add(ch);
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<Strand>();
+	}
+	
+	public static int doCountByDate(Date date, Strand strand) {
+		try{
+			// select count(id) from SCENE
+			// where date='2008-03-17' and strand_id=1
+			StringBuffer buf = new StringBuffer();
+			buf.append("select count(id) from ");
+			buf.append(Scene.TABLE_NAME);
+			buf.append(" where ");
+			buf.append(Scene.COLUMN_DATE);
+			buf.append(" = ? and ");
+			buf.append(Scene.COLUMN_STRAND_ID);
+			buf.append(" = ?");
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(buf.toString());
+			stmt.setDate(1, date);
+			stmt.setInt(2, strand.getId());
+			ResultSet rs = stmt.executeQuery();
+			int count = 0;
+			if(rs.next()){
+				count = rs.getInt(1);
+			}
+			return count;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return 0;
+	}
+}

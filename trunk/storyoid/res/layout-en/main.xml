@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+           android:layout_width="fill_parent"
+           android:layout_height="fill_parent"
+>
+<TextView  
+	android:id="@+id/objTV1"
+    android:layout_width="fill_parent" 
+    android:layout_height="wrap_content" 
+    android:text="@string/hello"
+/>
+
+<!-- EditText android:id="@+id/objTxt1"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objTV1"
+          android:text=""
+/ -->
+
+<!--  EditText android:id="@+id/objTxt2"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objTxt1"
+          android:text=""
+          android:singleLine="True"
+/ -->
+<!-- TextView id="@+id/objLbl3"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objLbl1"
+          android:text="Integer"
+/>
+<EditText id="@+id/objTxt3"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_alignTop="@id/objLbl3"
+          android:layout_below="@id/objLbl1"
+          android:text=""
+          android:singleLine="True"
+/>
+<Button id="@+id/objBtn2"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_alignTop="@id/objBtn1"
+          android:layout_below="@id/objLbl1"
+          android:text="Cancel"
+/>
+<Button android:id="@+id/objBtn1"
+          android:layout_width="134sp"
+          android:layout_height="24sp"
+          android:layout_below="@id/objLbl1"
+          
+/ -->
+
+
+
+<FrameLayout android:id="@+id/FrameLayout01" android:layout_below="@id/objTV1" android:layout_width="wrap_content" android:layout_height="wrap_content"><TextView android:id="@+id/objLbl1" android:layout_width="134sp" android:layout_height="24sp" android:text="Key" android:layout_below="@id/objTV1" /><LinearLayout android:id="@+id/LinearLayout01" android:layout_below="@id/objLbl1" android:layout_width="wrap_content" android:layout_height="wrap_content"><TextView android:id="@+id/objLbl2" android:layout_width="134sp" android:layout_height="24sp" android:layout_below="@id/objLbl1" android:text="String" /><EditText android:id="@+id/EditText01" android:layout_below="@id/objTV1" android:layout_width="wrap_content" android:layout_alignLeft="@id/objLbl1" android:layout_height="wrap_content" android:minWidth="90sp"></EditText></LinearLayout></FrameLayout>
+<Button android:id="@+id/Button01" android:layout_below="@id/FrameLayout01" 
+android:layout_width="wrap_content" android:layout_height="wrap_content" 
+android:text="@string/menu_scenes"></Button>
+<Button android:layout_below="@id/FrameLayout01" 
+		android:layout_width="wrap_content" 
+        android:layout_height="wrap_content" 
+        android:layout_gravity="right"
+        android:text="@string/menu_save" android:id="@+id/Button02" android:layout_toRightOf="@+id/Button01"/>
+
+</RelativeLayout>
+

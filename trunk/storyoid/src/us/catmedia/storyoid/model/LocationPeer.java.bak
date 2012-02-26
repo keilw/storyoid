@@ -1,0 +1,294 @@
+/*
+StorYBook: Summary-based tool for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.view.dialog.add.LocationDialog;
+
+public class LocationPeer {
+
+	private static Logger logger = Logger.getLogger(LocationPeer.class);
+
+	/**
+	 * Has to be package private!
+	 * 
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		// drop if exists
+		logger.debug("createTable: drop table " + Location.TABLE_NAME);
+		sql = "drop table " + Location.TABLE_NAME + " if exists";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+
+		// create
+		logger.debug("createTable: create table " + Location.TABLE_NAME);
+		sql = "create table "
+			+ Location.TABLE_NAME
+			+ " (" + Location.COLUMN_ID + " identity primary key,"
+			+ Location.COLUMN_NAME + " varchar(32),"
+			+ Location.COLUMN_CITY + " varchar(32),"
+			+ Location.COLUMN_COUNTRY + " varchar(32),"
+			+ Location.COLUMN_DESCRIPTION + " varchar(8192),"
+			+ Location.COLUMN_ADDRESS + " varchar(64))";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+
+	public static List<Location> doSelectAll() {
+		try {
+			List<Location> list = new ArrayList<Location>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select * from " + Location.TABLE_NAME);
+			sql.append(" order by " + Location.COLUMN_NAME + ",");
+			sql.append(" " + Location.COLUMN_CITY);
+
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Location Location = makeLocation(rs);
+				logger.debug("doSelectAll: " + Location);
+				list.add(Location);
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public static Location doSelectById(int id) throws Exception {
+		String sql = "select * from " + Location.TABLE_NAME + " where "
+				+ Location.COLUMN_ID + " = ?";
+		PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+				.prepareStatement(sql);
+		stmt.setInt(1, id);
+		ResultSet rs = stmt.executeQuery();
+		Location Location = null;
+		int c = 0;
+		while (rs.next() && c < 2) {
+			Location = makeLocation(rs);
+			++c;
+		}
+		if (c == 0) {
+			return null;
+		}
+		if (c > 1) {
+			throw new Exception("more than one record found");
+		}
+		logger.debug("doSelectById: " + Location);
+		return Location;
+	}
+
+	private static Location makeLocation(ResultSet rs) throws SQLException {
+		Location location = new Location(rs.getInt(Location.COLUMN_ID));
+		location.setName(rs.getString(Location.COLUMN_NAME));
+		location.setCity(rs.getString(Location.COLUMN_CITY));
+		location.setCountry(rs.getString(Location.COLUMN_COUNTRY));
+		location.setDescription(rs.getString(Location.COLUMN_DESCRIPTION));
+		location.setAddress(rs.getString(Location.COLUMN_ADDRESS));
+		return location;
+	}
+
+	public static void makeOrUpdateLocation(LocationDialog dlg, boolean edit)
+			throws Exception {
+		Location location;
+		if (edit) {
+			location = dlg.getLocationTable();
+		} else {
+			location = new Location();
+		}
+		
+		location.setName(dlg.getNameTF().getText());
+		location.setCity(dlg.getCityTF().getText());
+		location.setCountry(dlg.getCountryTF().getText());
+		location.setDescription(dlg.getDescriptionTA().getText());
+		location.setAddress(dlg.getAddressTF().getText());
+		location.save();
+	}
+
+
+	public static int doCount() throws Exception {
+		String sql = "select count(" + Location.COLUMN_ID + ") from "
+				+ Location.TABLE_NAME;
+		Statement stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		ResultSet rs = stmt.executeQuery(sql);
+		int c = 0;
+		int count = 0;
+		while (rs.next() && c < 2) {
+			count = rs.getInt(1);
+			++c;
+		}
+		if (c == 0) {
+			return -1;
+		}
+		if (c > 1) {
+			logger.error("more than one record found");
+			throw new Exception("more than one record found");
+		}
+		return count;
+	}
+
+	/**
+	 * Cascaded deletion of the given location.
+	 * 
+	 * @param location
+	 *            the location to delete
+	 * @return false if location is null, true otherwise
+	 * @throws Exception
+	 */
+	public static boolean doDelete(Location location) throws Exception {
+		if (location == null) {
+			return false;
+		}
+		
+		logger.debug("doDelete: " + location);
+		String sql;
+		Statement stmt;
+
+		// delete scene links
+		List<SceneLinkLocation> list
+				= SceneLinkLocationPeer.doSelectByLocationId(location.getId());
+		for (SceneLinkLocation link : list) {
+			SceneLinkLocationPeer.doDelete(link);
+		}
+		
+		// delete the location itself
+		sql = "delete from " + Location.TABLE_NAME
+			+ " where " + Location.COLUMN_ID + " = " + location.getId();
+		stmt = PersistenceManager.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+		return true;
+	}	
+	
+	public static List<Location> doSelectByCharacterAndDate(Character person, Date date) {
+		try {
+			// select DISTINCT(cl.LOCATION_ID)
+			// from SCENE as ch,
+			//   SCENE_PERSON as cp,
+			//   SCENE_LOCATION as cl
+			// where cp.SCENE_ID = ch.ID
+			//   and cl.SCENE_ID = ch.ID
+			//   and ch.date='2008-03-17'
+			//   and cp.PERSON_ID='1'	
+			List<Location> list = new ArrayList<Location>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select distinct(cl." + SceneLinkLocation.COLUMN_LOCATION_ID + ")");
+			sql.append(" from " + Scene.TABLE_NAME + " as ch,");
+			sql.append(" " + SceneLinkCharacter.TABLE_NAME + " cp,");
+			sql.append(" " + SceneLinkLocation.TABLE_NAME + " cl");
+			sql.append(" where cp." + SceneLinkCharacter.COLUMN_SCENE_ID);
+			sql.append(" = ch." + Scene.COLUMN_ID);
+			sql.append(" and cl."  + SceneLinkLocation.COLUMN_SCENE_ID);
+			sql.append(" = ch." + Scene.COLUMN_ID);
+			sql.append(" and cp." + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+			if (date != null) {
+				sql.append(" and ch." + Scene.COLUMN_DATE + " = ?");
+			}
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql.toString());
+			stmt.setInt(1, person.getId());
+			if (date != null) {
+				stmt.setDate(2, date);
+			}
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				int id = rs.getInt(1);
+				list.add(LocationPeer.doSelectById(id));
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return new ArrayList<Location>();
+	}
+
+	public static List<Location> doSelectByCharacters(List<Character> personList) {
+		try {
+			if (personList == null || personList.isEmpty()) {
+				return new ArrayList<Location>();
+			}
+			List<Location> list = new ArrayList<Location>();
+			StringBuffer sql = new StringBuffer();
+			
+			// select DISTINCT(cl.LOCATION_ID),
+			//   lo.COUNTRY, lo.CITY, lo.NAME  
+			// from SCENE as ch,
+			//   SCENE_PERSON as cp,
+			//   SCENE_LOCATION as cl,
+			//   LOCATION as lo
+			// where cp.SCENE_ID = ch.ID
+			//   and cl.SCENE_ID = ch.ID
+			//   and (cp.PERSON_ID='3' or cp.PERSON_ID='4')
+			// order by lo.COUNTRY, lo.CITY, lo.NAME 
+			sql.append("select DISTINCT(cl." + SceneLinkLocation.COLUMN_LOCATION_ID + "),");
+			sql.append(" lo." + Location.COLUMN_COUNTRY + ",");
+			sql.append(" lo." + Location.COLUMN_CITY + ",");
+			sql.append(" lo." + Location.COLUMN_NAME);
+			sql.append(" from " + Scene.TABLE_NAME + " as ch,");
+			sql.append(" " + SceneLinkCharacter.TABLE_NAME + " cp,");
+			sql.append(" " + SceneLinkLocation.TABLE_NAME + " cl,");
+			sql.append(" " + Location.TABLE_NAME + " lo");
+			sql.append(" where cp." + SceneLinkCharacter.COLUMN_SCENE_ID);
+			sql.append(" = ch." + Scene.COLUMN_ID);
+			sql.append(" and cl."  + SceneLinkLocation.COLUMN_SCENE_ID);
+			sql.append(" = ch." + Scene.COLUMN_ID);
+			sql.append(" and cl."  + SceneLinkLocation.COLUMN_LOCATION_ID);
+			sql.append(" = lo." + Location.COLUMN_ID);			
+			sql.append(" and ( cp." + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+			for (int i = 1; i < personList.size(); ++i) {
+				sql.append(" or cp." + SceneLinkCharacter.COLUMN_PERSON_ID + " = ?");
+			}
+			sql.append(")");
+			sql.append(" order by " + Location.COLUMN_COUNTRY + ", ");
+			sql.append(" " + Location.COLUMN_CITY + ", ");
+			sql.append(" " + Location.COLUMN_NAME);
+				
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection().prepareStatement(sql.toString());
+			stmt.setInt(1, personList.get(0).getId());
+			for (int i = 1; i < personList.size(); ++i) {
+				stmt.setInt(1 + i, personList.get(i).getId());
+			}
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				int id = rs.getInt(1);
+				list.add(LocationPeer.doSelectById(id));
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return new ArrayList<Location>();
+	}
+}
