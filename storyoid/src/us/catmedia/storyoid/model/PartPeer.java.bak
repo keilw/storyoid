@@ -1,0 +1,195 @@
+/*
+StorYBook: Summary-based tool for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.view.dialog.add.PartDialog;
+
+public class PartPeer {
+
+	private static Logger logger = Logger.getLogger(PartPeer.class);
+
+	/**
+	 * Has to be package private!
+	 * 
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		// drop if exists
+		logger.debug("createTable: drop table " + Part.TABLE_NAME);
+		sql = "drop table " + Part.TABLE_NAME + " if exists";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+
+		// create
+		logger.debug("createTable: create table " + Part.TABLE_NAME);
+		sql = "create table "
+			+ Part.TABLE_NAME
+			+ " (" + Part.COLUMN_ID + " identity primary key,"
+			+ Part.COLUMN_NUMBER + " int,"
+			+ Part.COLUMN_NAME + " varchar(32))";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+
+	public static Part getFirstPart(){
+		return doSelectAll().get(0);
+	}
+	
+	public static List<Part> doSelectAll() {
+		try {
+			if(!PersistenceManager.getInstance().isConnectionOpen()){
+				return new ArrayList<Part>();
+			}
+			
+			List<Part> list = new ArrayList<Part>();
+			StringBuffer sql = new StringBuffer("select * from " + Part.TABLE_NAME);
+			sql.append(" order by " + Part.COLUMN_NUMBER);
+
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Part strand = makePart(rs);
+				logger.debug("doSelectAll: " + strand);
+				list.add(strand);
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public static Part doSelectById(int id) {
+		try{
+			String sql = "select * from " + Part.TABLE_NAME + " where "
+					+ Part.COLUMN_ID + " = ?";
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql);
+			stmt.setInt(1, id);
+			ResultSet rs = stmt.executeQuery();
+			Part part = null;
+			int c = 0;
+			while (rs.next() && c < 2) {
+				part = makePart(rs);
+				++c;
+			}
+			if (c == 0) {
+				return null;
+			}
+			if (c > 1) {
+				throw new Exception("more than one record found");
+			}
+			logger.debug("doSelectById: " + part);
+			return part;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	private static Part makePart(ResultSet rs) throws SQLException {
+		Part part = new Part(rs.getInt(Part.COLUMN_ID));
+		part.setNumber(rs.getInt(Part.COLUMN_NUMBER));
+		part.setName(rs.getString(Strand.COLUMN_NAME));
+		return part;
+	}
+	
+	public static int doCount() throws Exception {
+		String sql = "select count(" + Part.COLUMN_ID + ") from "
+				+ Part.TABLE_NAME;
+		Statement stmt = PersistenceManager.getInstance().getConnection().createStatement();
+		ResultSet rs = stmt.executeQuery(sql);
+		int c = 0;
+		int count = 0;
+		while (rs.next() && c < 2) {
+			count = rs.getInt(1);
+			++c;
+		}
+		if (c == 0) {
+			return -1;
+		}
+		if (c > 1) {
+			logger.error("more than one record found");
+			throw new Exception("more than one record found");
+		}
+		return count;
+	}
+
+	/**
+	 * Cascaded deletion of the given strand.
+	 * 
+	 * @param part the strand to delete
+	 * @return false if strand is null, true otherwise
+	 * @throws Exception
+	 */
+	public static boolean doDelete(Part part) throws Exception {
+		if (part == null) {
+			return false;
+		}
+		logger.debug("doDelete: " + part);
+
+		// delete chapters
+		for(Chapter chapter: ChapterPeer.doSelectByPart(part)){
+			ChapterPeer.doDelete(chapter);
+		}
+				
+		// delete the part itself
+		String sql = "delete from " + Part.TABLE_NAME
+			+ " where " + Part.COLUMN_ID + " = " + part.getId();
+		Statement stmt = PersistenceManager.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+		return true;
+	}
+	
+	public static void makeOrUpdatePart(PartDialog dlg, boolean edit)
+			throws Exception {
+		Part part;
+		if (edit) {
+			part = dlg.getPart();
+		} else {
+			part = new Part();
+		}
+		part.setNumberStr(dlg.getNumberTF().getText());
+		part.setName(dlg.getNameTF().getText());
+		part.save();
+	}
+	
+	public static boolean checkIfPartIsValid(int partId){
+		for(Part part: doSelectAll()){
+			if(part.getId() == partId){
+				return true;
+			}
+		}
+		return false;
+	}
+}

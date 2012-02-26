@@ -1,0 +1,732 @@
+/*
+StorYBook: Summary-based software for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.util.I18N;
+import ch.intertec.storybook.util.SwingTools;
+import ch.intertec.storybook.view.dialog.add.SceneDialog;
+
+public class ScenePeer {
+	
+	private static Logger logger = Logger.getLogger(ScenePeer.class);
+
+	public final static int ORDER_BY_DEFAULT = 0;
+	public final static int ORDER_BY_DATE_AND_STRAND_ID = 1;
+	public final static int ORDER_BY_SCENE_NO = 2;
+
+	public static List<Status> statusList;
+
+	public static List<Status> getStatusList(){
+		if(statusList == null){
+			statusList =new ArrayList<Status>();
+			statusList.add(new Status(Scene.STATUS_OUTLINE,
+					I18N.getMsg("msg.status.outline")));
+			statusList.add(new Status(Scene.STATUS_DRAFT,
+					I18N.getMsg("msg.status.draft")));
+			statusList.add(new Status(Scene.STATUS_1ST_EDIT,
+					I18N.getMsg("msg.status.1st.edit")));
+			statusList.add(new Status(Scene.STATUS_2ND_EDIT,
+					I18N.getMsg("msg.status.2nd.edit")));
+			statusList.add(new Status(Scene.STATUS_DONE,
+					I18N.getMsg("msg.status.done")));
+		}
+		return statusList;
+	}
+	
+	/**
+	 * Has to be package private!
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		
+		logger.debug("drop table " + Scene.TABLE_NAME + " if exists");
+		sql = "drop table " + Scene.TABLE_NAME + " if exists";
+		stmt = PersistenceManager
+			.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+
+		logger.debug("create table " + Scene.TABLE_NAME);
+		sql = "create table " + Scene.TABLE_NAME + " ("
+				+ Scene.COLUMN_ID + " identity primary key,"
+				+ Scene.COLUMN_CHAPTER_ID + " int,"
+				+ Scene.COLUMN_STRAND_ID + " int,"
+				+ Scene.COLUMN_SCENE_NO + " int,"
+				+ Scene.COLUMN_DATE + " date,"
+				+ Scene.COLUMN_TITLE + " varchar(256),"
+				+ Scene.COLUMN_SUMMARY + " varchar(8192),"
+				+ Scene.COLUMN_STATUS + " int" + " )";
+		stmt = PersistenceManager
+			.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+	}
+
+	public static List<Scene> doSelectAll() {
+		return doSelectAll(ORDER_BY_DEFAULT);
+	}
+
+	public static List<Scene> doSelectAll(int flag) {
+		try{
+			List<Scene> list = new ArrayList<Scene>();
+			StringBuffer sql = new StringBuffer(
+					"select * from " + Scene.TABLE_NAME);
+	
+			switch (flag) {
+			case ORDER_BY_DEFAULT:
+				sql.append(" order by ");
+				sql.append(Scene.COLUMN_ID);
+				break;
+			case ORDER_BY_DATE_AND_STRAND_ID:
+				sql.append(" order by ");
+				sql.append(Scene.COLUMN_DATE);
+				sql.append(", ");
+				sql.append(Scene.COLUMN_STRAND_ID);
+				break;
+			case ORDER_BY_SCENE_NO:
+				sql.append(" order by ");
+				sql.append(Scene.COLUMN_SCENE_NO);
+				sql.append(", ");
+				sql.append(Scene.COLUMN_ID);
+				break;
+			default:
+				break;
+			}
+	
+			Statement stmt = PersistenceManager.getInstance().getConnection().createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Scene scene = makeScene(rs);
+				logger.debug("doSelectAll: " + scene);
+				list.add(scene);
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<Scene>();
+	}
+	
+	public static List<Scene> doSelectByDate(Date date) {
+		try{
+			List<Scene> list = new ArrayList<Scene>();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select * from " + Scene.TABLE_NAME);
+			sql.append(" where " + Scene.COLUMN_DATE + "=?");
+			sql.append(" order by " + Scene.COLUMN_STRAND_ID);
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql.toString());
+			stmt.setDate(1, date);
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				Scene scene = makeScene(rs);
+				list.add(scene);
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<Scene>();
+	}
+
+	public static int getMaxPerStrandOnDate(Date date) throws Exception {
+		List<Strand> strandList = StrandPeer.doSelectAll();
+		int max = 0;
+		for (Strand strand : strandList) {
+			int c = doCountByDateAndStrandId(date, strand.getId());
+			if (c > max) {
+				max = c;
+			}
+		}
+		return max;
+	}
+
+	public static int doCountByDateAndStrandId(Date date, int strandId) throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("select count(" + Scene.COLUMN_ID + ")");
+		sql.append(" from " + Scene.TABLE_NAME);
+		sql.append(" where " + Scene.COLUMN_DATE + " = ?");
+		sql.append(" and " + Scene.COLUMN_STRAND_ID + " = ?");
+		PreparedStatement stmt = PersistenceManager.getInstance()
+				.getConnection().prepareStatement(sql.toString());
+		stmt.setDate(1, date);
+		stmt.setInt(2, strandId);
+		ResultSet rs = stmt.executeQuery();
+		rs.next();
+		return rs.getInt(1);
+	}
+	
+	public static List<Integer> doSelectBySceneNumber(int sceneNo, Chapter chapter)
+			throws Exception {
+		List<Integer> list = new ArrayList<Integer>();
+		StringBuffer sql = new StringBuffer();
+		sql.append("select * from " + Scene.TABLE_NAME);
+		sql.append(" where " + Scene.COLUMN_SCENE_NO + " = ?");
+		sql.append(" and " + Scene.COLUMN_CHAPTER_ID + " = ?");
+		sql.append(" order by " + Scene.COLUMN_STRAND_ID);
+		PreparedStatement stmt = PersistenceManager.getInstance()
+				.getConnection().prepareStatement(sql.toString());
+		stmt.setInt(1, sceneNo);
+		stmt.setInt(2, chapter.getId());
+		ResultSet rs = stmt.executeQuery();
+		while (rs.next()) {
+			list.add(new Integer(rs.getInt(Scene.COLUMN_SCENE_NO)));
+		}
+		return list;
+	}
+	
+	public static Scene doSelectById(int id) {
+		try{
+			String sql = "select * from " + Scene.TABLE_NAME
+					+ " where " + Scene.COLUMN_ID + " = ?";
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql);
+			stmt.setInt(1, id);
+			ResultSet rs = stmt.executeQuery();
+			Scene scene = null;
+			int c = 0;
+			while (rs.next() && c < 2) {
+				scene = makeScene(rs);
+				++c;
+			}
+			if (c == 0) {
+				return null;
+			}
+			if (c > 1) {
+				throw new Exception("more than one record found");
+			}
+			logger.debug("doSelectById: " + scene);
+			return scene;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return null;
+	}
+	
+	public static List<Scene> doSelectByStrandId(int strandId)
+			throws Exception {
+		List<Scene> list = new ArrayList<Scene>();
+		StringBuffer sql = new StringBuffer();
+		sql.append("select * from " + Scene.TABLE_NAME);
+		sql.append(" where " + Scene.COLUMN_STRAND_ID + "=?");
+		sql.append(" order by " + Scene.COLUMN_STRAND_ID);
+		PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+				.prepareStatement(sql.toString());
+		stmt.setInt(1, strandId);
+		ResultSet rs = stmt.executeQuery();
+		while (rs.next()) {
+			Scene scene = makeScene(rs);
+			logger.debug("doSelectByStrandId: " + scene);
+			list.add(scene);
+		}
+		return list;
+	}
+
+	public static List<Scene> doSelectByChapter(Chapter chapter)
+			throws Exception {
+		return doSelectByChapterId(chapter.getId());
+	}
+	
+	public static List<Scene> doSelectByChapterId(int chapterId)
+			throws Exception {
+		List<Scene> list = new ArrayList<Scene>();
+		StringBuffer buf = new StringBuffer();
+		buf.append("select * from ");
+		buf.append(Scene.TABLE_NAME);
+		buf.append(" where ");
+		buf.append(Scene.COLUMN_CHAPTER_ID);
+		buf.append(" = ? ");
+		buf.append(" order by ");
+		buf.append(Scene.COLUMN_CHAPTER_ID);
+		buf.append(", ");
+		buf.append(Scene.COLUMN_SCENE_NO);
+		buf.append(", ");
+		buf.append(Scene.COLUMN_ID);
+		PreparedStatement stmt = PersistenceManager.getInstance()
+				.getConnection().prepareStatement(buf.toString());
+		stmt.setInt(1, chapterId);
+		ResultSet rs = stmt.executeQuery();
+		while (rs.next()) {
+			Scene scene = makeScene(rs);
+			list.add(scene);
+		}
+		return list;
+	}
+	
+	public static List<Scene> doSelectByStrandIdAndDate(int strandId, Date date) throws Exception {
+		List<Scene> list = new ArrayList<Scene>();
+		StringBuffer sql = new StringBuffer();
+		sql.append("select * from " + Scene.TABLE_NAME);
+		sql.append(" where " + Scene.COLUMN_STRAND_ID + " = ?");
+		sql.append(" and " + Scene.COLUMN_DATE + " = ?");
+		sql.append(" order by " + Scene.COLUMN_CHAPTER_ID);
+		sql.append(" , " + Scene.COLUMN_SCENE_NO);
+		PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+				.prepareStatement(sql.toString());
+		stmt.setInt(1, strandId);
+		stmt.setDate(2, date);
+		ResultSet rs = stmt.executeQuery();
+		while (rs.next()) {
+			Scene scene = makeScene(rs);
+			logger.debug("doSelectByStrandIdAndDate: " + scene);
+			list.add(scene);
+		}
+		return list;
+	}
+
+	private static Scene makeScene(ResultSet rs) throws SQLException {
+		Scene scene = new Scene(rs.getInt(Scene.COLUMN_ID));
+		scene.setChapterId(rs.getInt(Scene.COLUMN_CHAPTER_ID));
+		scene.setStrandId(rs.getInt(Scene.COLUMN_STRAND_ID));
+		scene.setDate(rs.getDate(Scene.COLUMN_DATE));
+		scene.setSceneNo(rs.getInt(Scene.COLUMN_SCENE_NO));
+		scene.setTitle(rs.getString(Scene.COLUMN_TITLE));
+		scene.setSummary(rs.getString(Scene.COLUMN_SUMMARY));
+		scene.setStatus(rs.getInt(Scene.COLUMN_STATUS));
+		return scene;
+	}
+
+	public static int countMaxNumberOfCellsOnDate(Date date) throws Exception {
+		List<Strand> list = StrandPeer.doSelectAll();
+		Iterator<Strand> i = list.iterator();
+		int max = 0;
+		while(i.hasNext()){
+			Strand strand = i.next();
+			StringBuffer sql = new StringBuffer();
+			sql.append("select count(" + Scene.COLUMN_ID + ")");
+			sql.append(" from " + Scene.TABLE_NAME);
+			sql.append(" where " + Scene.COLUMN_STRAND_ID + "=?");
+			sql.append(" and " + Scene.COLUMN_DATE + "=?");
+			PreparedStatement stmt = PersistenceManager.getInstance()
+					.getConnection().prepareStatement(sql.toString());
+			// sets for insert & update
+			stmt.setInt(1, strand.getId());
+			stmt.setDate(2, date);
+			ResultSet rs = stmt.executeQuery();
+			rs.next();
+			int count = rs.getInt(1);
+			if(count > max){
+				max = count;
+			}
+		}
+		return max;
+	}
+		
+	public static Set<Date> doSelectDistinctDate() {
+		try{
+			StringBuffer sql = new StringBuffer();
+
+			// select distinct(date), part_id from (
+			//   select s.date, c.PART_ID
+			//   from scene s
+			//   left outer join chapter c
+			//  on s.CHAPTER_ID = c.id
+			// )
+
+			sql.append("select distinct(");
+			sql.append(Scene.COLUMN_DATE);
+			sql.append("), ");
+			sql.append(Chapter.COLUMN_PART_ID);
+			sql.append(" from ( select s.");
+			sql.append(Scene.COLUMN_DATE);
+			sql.append(", c.");
+			sql.append(Chapter.COLUMN_PART_ID);
+			sql.append(" from ");
+			sql.append(Scene.TABLE_NAME);
+			sql.append(" s left outer join ");
+			sql.append(Chapter.TABLE_NAME);
+			sql.append(" c on s.");
+			sql.append(Scene.COLUMN_CHAPTER_ID);
+			sql.append(" = c.");
+			sql.append(Chapter.COLUMN_ID);
+			sql.append(") order by ");
+			sql.append(Scene.COLUMN_DATE);
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			TreeSet<Date> set = new TreeSet<Date>();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Date date = rs.getDate(Scene.COLUMN_DATE);
+				int partId = rs.getInt(Chapter.COLUMN_PART_ID);
+				if (partId == getActivePartId() || partId == 0) {
+					set.add(date);
+				}
+			}
+			return set;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new TreeSet<Date>();
+	}
+
+	public static List<Date> doSelectDistinctDateByChapter(Chapter chapter) {
+		try{
+			StringBuffer sql = new StringBuffer();
+			sql.append("select distinct(" + Scene.COLUMN_DATE + ")");
+			sql.append(" from " + Scene.TABLE_NAME);
+			sql.append(" where " + Scene.COLUMN_CHAPTER_ID + " = " + chapter.getId());
+			sql.append(" order by " + Scene.COLUMN_DATE);
+			Statement stmt = PersistenceManager.getInstance().getConnection().createStatement();
+			List<Date> list = new ArrayList<Date>();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Date date = rs.getDate(Scene.COLUMN_DATE);
+				list.add(date);
+			}
+			return list;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return new ArrayList<Date>();
+	}
+
+	public static List<Integer> doSelectDistinctStrandId() throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("select distinct(" + Scene.COLUMN_STRAND_ID + ")");
+		sql.append(" from " + Scene.TABLE_NAME);
+		sql.append(" order by " + Scene.COLUMN_STRAND_ID);
+		Statement stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		List<Integer> list = new ArrayList<Integer>();
+		ResultSet rs = stmt.executeQuery(sql.toString());
+		while (rs.next()) {
+			int strandId = rs.getInt(Scene.COLUMN_STRAND_ID);
+			list.add(strandId);
+//			logger.debug("selectDistinctStrandId: " + strandId);
+		}
+		return list;
+	}
+		
+	public static int doCount() {
+		try{
+			if(!PersistenceManager.getInstance().isConnectionOpen()){
+				return 0;
+			}
+			StringBuffer sql = new StringBuffer();
+			sql.append("select count(s.");
+			sql.append(Scene.COLUMN_ID);
+			sql.append(")");
+			sql.append(" from ");
+			sql.append(Scene.TABLE_NAME);
+			sql.append(" s, ");
+			sql.append(Chapter.TABLE_NAME);
+			sql.append(" c where s.");
+			sql.append(Scene.COLUMN_CHAPTER_ID);
+			sql.append(" = c.");
+			sql.append(Chapter.COLUMN_ID);
+			sql.append(" and s.");
+			sql.append(Scene.COLUMN_SCENE_NO);
+			sql.append(" > -1");
+			sql.append(" and c.");
+			sql.append(Chapter.COLUMN_PART_ID);
+			sql.append(" = ");
+			sql.append(SwingTools.getActivePartId());
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			rs.next();
+			return rs.getInt(1);
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return 0;
+	}
+		
+	public static List<Integer> doSelect() throws Exception {
+		StringBuffer sql = new StringBuffer();
+		sql.append("select " + Scene.COLUMN_SCENE_NO);
+		sql.append(" from " + Scene.TABLE_NAME);
+		sql.append(" order by " + Scene.COLUMN_SCENE_NO);
+		Statement stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		List<Integer> list = new ArrayList<Integer>();
+		ResultSet rs = stmt.executeQuery(sql.toString());
+		while (rs.next()) {
+			int sceneNo = rs.getInt(Scene.COLUMN_SCENE_NO);
+			list.add(sceneNo);
+		}
+		return list;
+	}
+
+	/**
+	 * Cascaded deletion of the given scenes and all its links
+	 * to the tables
+	 * <ol>
+	 * <li>strand</li>
+	 * <li>person</li>
+	 * <li>location</li>
+	 * </ol>
+	 * 
+	 * @param scene
+	 *            the scene to delete
+	 * @return true if ch is not null, false otherwise
+	 * @throws Exception
+	 */
+	public static boolean doDelete(Scene scene) throws Exception {
+		if (scene == null) {
+			return false;
+		}
+
+		// delete strand links
+		SceneLinkStrandPeer.doDeleteBySceneId(scene.getId());
+		// delete person links
+		SceneLinkCharacterPeer.doDeleteBySceneId(scene.getId());
+		// delete location links
+		SceneLinkLocationPeer.doDeleteBySceneId(scene.getId());			
+				
+		// delete the scene
+		String sql = "delete from " + Scene.TABLE_NAME
+				+ " where " + Scene.COLUMN_ID + " = " + scene.getId();
+		logger.debug("doDelete: " + scene);
+		Statement stmt = PersistenceManager.getInstance()
+			.getConnection().createStatement();
+		stmt.execute(sql);		
+		return true;
+	}
+	
+	public static void doDeleteByStrandId(int strandId) throws Exception {
+		String sql = "delete from " + Scene.TABLE_NAME
+			+ " where " + Scene.COLUMN_STRAND_ID + " = " + strandId;
+		Statement stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+	
+	public static Scene makeOrUpdateScene(SceneDialog dlg, boolean edit)
+			throws Exception {
+
+		// get date from date chooser
+		java.sql.Date date;
+		date = new java.sql.Date(dlg.getDateChooser().getDate().getTime());
+		
+		// get selected strand from combo box
+		Strand strand = (Strand) dlg.getStrandCoB().getSelectedItem();
+
+		// get selected chapter from combo box
+		Chapter chapter = (Chapter) dlg.getChapterCoB().getSelectedItem();
+		
+		// get selected status from combo box
+		Status status = (Status) dlg.getStatusCob().getSelectedItem();
+		
+		Scene scene;
+		if (edit) {
+			scene = dlg.getScene();
+		} else {
+			scene = new Scene();
+		}
+		scene.setDate(date);
+		scene.setStrand(strand);
+		scene.setChapter(chapter);
+		scene.setStatus(status.getNumber());
+		if (dlg.getSceneTF().getText().isEmpty()) {
+			scene.setSceneNo(0);
+		} else {
+			scene.setSceneNoStr(dlg.getSceneTF().getText());
+		}
+		scene.setTitle(dlg.getTitleTA().getText());
+		scene.setSummary(dlg.getSummaryTA().getText());
+		scene.save();
+		return scene;
+	}
+	
+	public static List<Integer> getSceneNumbersAsIntegerList(Chapter chapter)
+			throws Exception {
+		List<Integer> list = new ArrayList<Integer>();
+		for (Scene scene : doSelectByChapter(chapter)) {
+			list.add(scene.getSceneNo());
+		}
+		return list;
+	}
+
+	public static void checkScenceNumbers(Chapter chapter,
+			List<Integer> notFoundList, List<Integer> foundTwiceList) {
+		try {
+			List<Integer> sceneNumberList = getSceneNumbersAsIntegerList(chapter);
+			if (sceneNumberList.isEmpty()) {
+				return;
+			}
+			Integer min = Collections.min(sceneNumberList);
+			Integer max = Collections.max(sceneNumberList);
+			for (int i = min.intValue(); i < max.intValue() + 1; ++i) {
+				List<Integer> list = doSelectBySceneNumber(i, chapter);
+				if (list.isEmpty()) {
+					// scene not found
+					notFoundList.add(new Integer(i));
+				}
+				if (list.size() > 1) {
+					// scene found twice or more
+					foundTwiceList.add(new Integer(i));
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
+	public static int getNextSceneNo(Chapter chapter) {
+		try {
+			int max = 0;
+			for (Scene scene : doSelectByChapter(chapter)) {
+				if (max < scene.getSceneNo()) {
+					max = scene.getSceneNo();
+				}
+			}
+			if (max > 0) {
+				return max + 1;
+			} else {
+				return 1;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return -1;
+	}
+
+	public static int getActivePartId(){
+		return SwingTools.getActivePartId();
+	}
+	
+	public static boolean makeSceneUnassigned(int sceneId) {
+		try {
+			Scene scene = doSelectById(sceneId);
+			scene.setChapterId(-1);
+			scene.setSceneNo(-1);
+			scene.save();
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+	
+	public static boolean insertScene(int sceneId, int chapterId, int newSceneNo){
+		try {
+			Chapter chapter = ChapterPeer.doSelectById(chapterId);
+			int counter = 1;
+			
+			Scene scene = doSelectById(sceneId);			
+			scene.setChapterId(chapterId);
+			scene.setSceneNo(-1);
+			scene.save();
+
+			for (Scene s : ScenePeer.doSelectByChapterId(chapterId)) {
+				if(s.getSceneNo() == -1){
+					// insert scene
+					s.setSceneNo(newSceneNo);
+					s.save();
+					++counter;
+					continue;
+				}
+				if (s.getSceneNo() < newSceneNo) {
+					++counter;
+					continue;
+				}
+				s.setSceneNo(counter + 1);
+				s.save();
+				++counter;
+			}
+						
+			// renumber scenes
+			ChapterPeer.renumberScenes(chapter);
+			
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+
+	public static boolean moveSceneToBegin(int sceneId, int destChapterId) {
+		Scene scene = ScenePeer.doSelectById(sceneId);
+		if (destChapterId != -1) {
+			scene.setChapterId(destChapterId);
+		}
+		scene.setSceneNo(-1);
+		try {
+			scene.save();
+			ChapterPeer.renumberScenes(scene.getChapter());
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+	
+	public static boolean moveSceneToEnd(int sceneId, int destChapterId){
+		Scene scene = ScenePeer.doSelectById(sceneId);
+		int next = -1;
+		if (destChapterId != -1) {
+			scene.setChapterId(destChapterId);
+			next = getNextSceneNo(ChapterPeer.doSelectById(destChapterId));
+		} else {
+			next = getNextSceneNo(ChapterPeer.doSelectById(scene.getChapterId()));
+		}
+		if (next == -1) {
+			next = 1;
+		}
+		scene.setSceneNo(next);
+		try {
+			scene.save();
+			ChapterPeer.renumberScenes(scene.getChapter());
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+
+	public static boolean swapScenes(int sourceSceneId, int destSceneId) {
+		if (sourceSceneId == destSceneId) {
+			return true;
+		}
+		Scene sourceScene = doSelectById(sourceSceneId);
+		Scene destScene = doSelectById(destSceneId);
+		int sourceSceneNo = sourceScene.getSceneNo();
+		int sourceChapterId = sourceScene.getChapter().getId();
+		int destSceneNo = destScene.getSceneNo();
+		int destChapterId = destScene.getChapter().getId();
+		sourceScene.setSceneNo(destSceneNo);
+		sourceScene.setChapterId(destChapterId);
+		destScene.setSceneNo(sourceSceneNo);
+		destScene.setChapterId(sourceChapterId);
+		try {
+			sourceScene.save();
+			destScene.save();
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
+	
+}

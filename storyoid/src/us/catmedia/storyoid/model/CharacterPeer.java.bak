@@ -1,0 +1,242 @@
+/*
+StorYBook: Summary-based software for novelist and authors.
+Copyright (C) 2008 Martin Mustun
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+package ch.intertec.storybook.model;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
+
+import org.apache.log4j.Logger;
+
+import ch.intertec.storybook.view.dialog.add.CharacterDialog;
+
+public class CharacterPeer {
+
+	private static Logger logger = Logger.getLogger(CharacterPeer.class);
+
+	/**
+	 * Has to be package private!
+	 * 
+	 * @throws Exception
+	 */
+	static void createTable() throws Exception {
+		String sql;
+		Statement stmt;
+		// drop if exists
+		logger.debug("createTable: drop table " + Character.TABLE_NAME);
+		sql = "drop table " + Character.TABLE_NAME + " if exists";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+
+		// create
+		logger.debug("createTable: create table " + Character.TABLE_NAME);
+		sql = "create table "
+			+ Character.TABLE_NAME
+			+ " (" + Character.COLUMN_ID + " identity primary key,"
+			+ Character.COLUMN_GENDER + " boolean,"
+			+ Character.COLUMN_FIRSTNAME + " varchar(16),"
+			+ Character.COLUMN_LASTNAME + " varchar(16),"
+			+ Character.COLUMN_ABBREVIATION + " varchar(16),"
+			+ Character.COLUMN_BIRTHDAY + " date,"
+			+ Character.COLUMN_DAY_OF_DEATH + " date,"
+			+ Character.COLUMN_OCCUPATION + " varchar(32),"
+			+ Character.COLUMN_DESCRIPTION + " varchar(8192),"
+			+ Character.COLUMN_COLOR + " int)";
+		stmt = PersistenceManager.getInstance().getConnection()
+				.createStatement();
+		stmt.execute(sql);
+	}
+
+	public static List<Character> doSelectAll() {
+		try {
+			List<Character> list = new ArrayList<Character>();
+			StringBuffer sql = new StringBuffer("select * from " + Character.TABLE_NAME);
+			sql.append(" order by " + Character.COLUMN_FIRSTNAME);
+			sql.append("," + Character.COLUMN_LASTNAME);
+
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql.toString());
+			while (rs.next()) {
+				Character person = makePerson(rs);
+				// logger.debug("doSelectAll: " + person);
+				list.add(person);
+			}
+			return list;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	public static Character doSelectById(int id) {
+		try{
+			String sql = "select * from " + Character.TABLE_NAME
+				+ " where " + Character.COLUMN_ID + " = ?";
+			PreparedStatement stmt = PersistenceManager.getInstance().getConnection()
+					.prepareStatement(sql);
+			stmt.setInt(1, id);
+			ResultSet rs = stmt.executeQuery();
+			Character person = null;
+			int c = 0;
+			while (rs.next() && c < 2) {
+				person = makePerson(rs);
+				++c;
+			}
+			if (c == 0) {
+				return null;
+			}
+			if (c > 1) {
+				throw new Exception("more than one record found");
+			}
+			logger.debug("doSelectById: " + person);
+			return person;
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	private static Character makePerson(ResultSet rs) throws SQLException {
+		Character person = new Character(rs.getInt(Character.COLUMN_ID));
+		person.setGender(rs.getBoolean(Character.COLUMN_GENDER));
+		person.setFirstname(rs.getString(Character.COLUMN_FIRSTNAME));
+		person.setLastname(rs.getString(Character.COLUMN_LASTNAME));
+		person.setAbbreviation(rs.getString(Character.COLUMN_ABBREVIATION));
+		person.setBirthday(rs.getDate(Character.COLUMN_BIRTHDAY));
+		person.setDayOfDeath(rs.getDate(Character.COLUMN_DAY_OF_DEATH));
+		person.setOccupation(rs.getString(Character.COLUMN_OCCUPATION));
+		person.setDescription(rs.getString(Character.COLUMN_DESCRIPTION));
+		int color = rs.getInt(Character.COLUMN_COLOR);
+		if (color == 0) {
+			person.setColor(null);
+		} else {
+			person.setColor(rs.getInt(Character.COLUMN_COLOR));
+		}
+		return person;
+	}
+	
+	public static void makeOrUpdatePerson(CharacterDialog dlg, boolean edit)
+			throws Exception {
+		Character person;
+		if (edit) {
+			person = dlg.getCharacter();
+		} else {
+			person = new Character();
+		}
+		
+		java.sql.Date birthdayDate;
+		java.sql.Date dayOfDateDate;		
+		if (dlg.getBirthdayDateChooser().isEmpty()) {
+			person.setBirthday(null);
+		} else {
+			birthdayDate = new java.sql.Date(dlg.getBirthdayDateChooser().getDate().getTime());
+			person.setBirthday(birthdayDate);
+		}		
+		if (dlg.getDayOfDeathDateChooser().isEmpty()) {
+			person.setDayOfDeath(null);
+		} else {
+			dayOfDateDate = new java.sql.Date(dlg.getDayOfDeathDateChooser().getDate().getTime());
+			person.setDayOfDeath(dayOfDateDate);
+		}
+		
+		if(dlg.getMaleRB().isSelected()){
+			person.setGender(Character.GENDER_MALE);
+		} else {
+			person.setGender(Character.GENDER_FEMALE);
+		}
+		person.setAbbreviation(dlg.getAbbreviationTF().getText());
+		person.setFirstname(dlg.getFirstNameTF().getText());
+		person.setLastname(dlg.getLastNameTF().getText());
+		person.setOccupation(dlg.getOccupationTF().getText());
+		person.setDescription(dlg.getDescriptionTA().getText());
+		if (dlg.getShowColorLb().getText().equals("X")) {
+			// no color
+			person.setColor(null);
+		} else {
+			person.setColor(dlg.getShowColorLb().getBackground());
+		}
+		person.save();
+	}
+
+
+	public static int doCount() {
+		try{
+			String sql = "select count(" + Character.COLUMN_ID + ") from "
+					+ Character.TABLE_NAME;
+			Statement stmt = PersistenceManager.getInstance().getConnection()
+					.createStatement();
+			ResultSet rs = stmt.executeQuery(sql);
+			int c = 0;
+			int count = 0;
+			while (rs.next() && c < 2) {
+				count = rs.getInt(1);
+				++c;
+			}
+			if (c == 0) {
+				return -1;
+			}
+			if (c > 1) {
+				logger.error("more than one record found");
+				throw new Exception("more than one record found");
+			}
+			return count;
+		} catch(Exception e){
+			e.printStackTrace();
+		}
+		return 0;
+	}
+
+	/**
+	 * Cascaded deletion of the given person.
+	 * 
+	 * @param person
+	 *            the person to delete
+	 * @return false if person is null, true otherwise
+	 * @throws Exception
+	 */
+	public static boolean doDelete(Character person) throws Exception {
+		if (person == null) {
+			return false;
+		}
+		
+		logger.debug("doDelete: " + person);
+		String sql;
+		Statement stmt;
+		
+		// delete scene links
+		List<SceneLinkCharacter> list
+				= SceneLinkCharacterPeer.doSelectByPersonId(person.getId());
+		for (SceneLinkCharacter link : list) {
+			SceneLinkCharacterPeer.doDelete(link);
+		}
+		
+		// delete the person itself
+		sql = "delete from " + Character.TABLE_NAME
+			+ " where " + Character.COLUMN_ID + " = " + person.getId();
+		stmt = PersistenceManager.getInstance().getConnection().createStatement();
+		stmt.execute(sql);
+		return true;
+	}
+
+}
